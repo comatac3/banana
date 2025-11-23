@@ -16,6 +16,7 @@ const MODEL_COSTS: Record<string, number> = {
   sora2: 15,
   sora2_pro: 25,
   wan: 4,
+  wan25: 6,
 };
 
 // Helper to upload image to Supabase Storage
@@ -475,6 +476,60 @@ export async function POST(request: NextRequest) {
       if (!taskId) {
         console.log("Full WAN response (no taskId):", JSON.stringify(data, null, 2));
         throw new Error("No task ID returned from WAN API");
+      }
+
+      return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    // ============ WAN 2.5 MODEL (Image To Video HD) ============
+    if (model === "wan25") {
+      if (!imageUrl) {
+        return NextResponse.json({ error: "WAN 2.5 requires an image" }, { status: 400 });
+      }
+
+      // Resolution: 720p or 1080p
+      const wan25Resolution = resolution === "720p" ? "720p" : "1080p";
+      // Duration: 5 or 10
+      const wan25Duration = String(duration === 10 ? 10 : 5);
+
+      const requestBody = {
+        model: "wan/2-5-image-to-video",
+        input: {
+          prompt: videoPrompt,
+          image_url: imageUrl,
+          duration: wan25Duration,
+          resolution: wan25Resolution,
+          enable_prompt_expansion: true,
+        }
+      };
+
+      console.log("WAN 2.5 request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_url: '[url]' } }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const responseText = await response.text();
+      console.log("WAN 2.5 raw response:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`WAN 2.5: Invalid response - ${responseText.substring(0, 200)}`);
+      }
+
+      if (!response.ok || (data.code && data.code !== 200)) {
+        console.log("WAN 2.5 error response:", JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || data.detail || JSON.stringify(data);
+        throw new Error(`WAN 2.5: ${errorMsg}`);
+      }
+
+      const taskId = data.data?.taskId || data.taskId || data.task_id || data.id;
+      if (!taskId) {
+        console.log("Full WAN 2.5 response (no taskId):", JSON.stringify(data, null, 2));
+        throw new Error("No task ID returned from WAN 2.5 API");
       }
 
       return NextResponse.json({ operationId: taskId, status: "processing", model });

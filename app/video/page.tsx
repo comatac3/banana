@@ -170,6 +170,22 @@ const MODELS = [
             defaultResolution: '720p',
         }
     },
+    {
+        id: 'wan25',
+        name: 'WAN 2.5',
+        description: 'WAN AI - High quality 1080P image-to-video (requires image)',
+        cost: 6,
+        badge: 'HD',
+        requiresImage: true,
+        settings: {
+            aspectRatios: ['16:9'],
+            durations: [5, 10],
+            resolutions: ['720p', '1080p'],
+            defaultAspectRatio: '16:9',
+            defaultDuration: 5,
+            defaultResolution: '1080p',
+        }
+    },
 ];
 
 export default function VideoPage() {
