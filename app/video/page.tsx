@@ -201,21 +201,22 @@ const MODELS = [
             defaultResolution: '1080p',
         }
     },
-    {
-        id: 'sora_storyboard',
-        name: 'Sora 2 Storyboard',
-        description: 'OpenAI Sora 2 - Create video from multiple storyboard images',
-        cost: 30,
-        badge: 'TOP',
-        requiresImage: true,
-        isStoryboard: true,
-        settings: {
-            aspectRatios: ['landscape', 'portrait'],
-            durations: [10, 15, 25],
-            defaultAspectRatio: 'landscape',
-            defaultDuration: 15,
-        }
-    },
+    // Sora Storyboard temporarily disabled - API format issues
+    // {
+    //     id: 'sora_storyboard',
+    //     name: 'Sora 2 Storyboard',
+    //     description: 'OpenAI Sora 2 - Create video from multiple storyboard images',
+    //     cost: 30,
+    //     badge: 'TOP',
+    //     requiresImage: true,
+    //     isStoryboard: true,
+    //     settings: {
+    //         aspectRatios: ['landscape', 'portrait'],
+    //         durations: [10, 15, 25],
+    //         defaultAspectRatio: 'landscape',
+    //         defaultDuration: 15,
+    //     }
+    // },
 ];
 
 export default function VideoPage() {
