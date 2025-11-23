@@ -463,8 +463,8 @@ export default function VideoPage() {
                 {/* Left Column: Controls - Scrollable */}
                 <div className="lg:col-span-4 h-full flex flex-col min-h-0">
                 <div className="flex-1 overflow-y-auto pr-2 space-y-6 pb-4">
-                    {/* Source Image Preview - Regular mode */}
-                    {!(selectedModel as any).isStoryboard && (
+                    {/* Source Image Preview - Regular mode (hide for storyboard and transition) */}
+                    {!(selectedModel as any).isStoryboard && !(selectedModel as any).isTransition && (
                     <div className="bg-white p-4 rounded-xl border-2 border-black shadow-hard">
                         <div className="flex justify-between items-center mb-2">
                             <h2 className="font-black text-lg">Source Image</h2>
