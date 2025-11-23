@@ -17,6 +17,7 @@ const MODEL_COSTS: Record<string, number> = {
   sora2_pro: 25,
   wan: 4,
   wan25: 6,
+  sora_storyboard: 30,
 };
 
 // Helper to upload image to Supabase Storage
@@ -47,7 +48,7 @@ async function uploadImageToStorage(
 
 export async function POST(request: NextRequest) {
   try {
-    const { sourceImage, prompt, model, aspectRatio = "16:9", duration = 5, resolution = "720p", quality = "standard" } = await request.json();
+    const { sourceImage, storyboardImages, prompt, model, aspectRatio = "16:9", duration = 5, resolution = "720p", quality = "standard" } = await request.json();
 
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -530,6 +531,68 @@ export async function POST(request: NextRequest) {
       if (!taskId) {
         console.log("Full WAN 2.5 response (no taskId):", JSON.stringify(data, null, 2));
         throw new Error("No task ID returned from WAN 2.5 API");
+      }
+
+      return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    // ============ SORA 2 STORYBOARD MODEL ============
+    if (model === "sora_storyboard") {
+      if (!storyboardImages || storyboardImages.length < 2) {
+        return NextResponse.json({ error: "Storyboard requires at least 2 images" }, { status: 400 });
+      }
+
+      // Upload all storyboard images
+      const uploadedUrls: string[] = [];
+      for (const img of storyboardImages) {
+        const url = await uploadImageToStorage(supabase, user.id, img);
+        uploadedUrls.push(url);
+      }
+
+      console.log("Uploaded storyboard images:", uploadedUrls.length);
+
+      // Duration: n_frames = "10", "15", or "25"
+      const nFrames = String(duration === 25 ? 25 : duration === 15 ? 15 : 10);
+
+      // Aspect ratio: "landscape" or "portrait"
+      const storyboardAspectRatio = aspectRatio === "portrait" ? "portrait" : "landscape";
+
+      const requestBody = {
+        model: "sora-2-pro-storyboard",
+        input: {
+          n_frames: nFrames,
+          image_urls: uploadedUrls,
+          aspect_ratio: storyboardAspectRatio,
+        }
+      };
+
+      console.log("Sora Storyboard request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_urls: `[${uploadedUrls.length} images]` } }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const responseText = await response.text();
+      console.log("Sora Storyboard raw response:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Sora Storyboard: Invalid response - ${responseText.substring(0, 200)}`);
+      }
+
+      if (!response.ok || (data.code && data.code !== 200)) {
+        console.log("Sora Storyboard error response:", JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || data.detail || JSON.stringify(data);
+        throw new Error(`Sora Storyboard: ${errorMsg}`);
+      }
+
+      const taskId = data.data?.taskId || data.taskId || data.task_id || data.id;
+      if (!taskId) {
+        console.log("Full Sora Storyboard response (no taskId):", JSON.stringify(data, null, 2));
+        throw new Error("No task ID returned from Sora Storyboard API");
       }
 
       return NextResponse.json({ operationId: taskId, status: "processing", model });

@@ -186,6 +186,21 @@ const MODELS = [
             defaultResolution: '1080p',
         }
     },
+    {
+        id: 'sora_storyboard',
+        name: 'Sora 2 Storyboard',
+        description: 'OpenAI Sora 2 - Create video from multiple storyboard images',
+        cost: 30,
+        badge: 'TOP',
+        requiresImage: true,
+        isStoryboard: true,
+        settings: {
+            aspectRatios: ['landscape', 'portrait'],
+            durations: [10, 15, 25],
+            defaultAspectRatio: 'landscape',
+            defaultDuration: 15,
+        }
+    },
 ];
 
 export default function VideoPage() {
@@ -196,6 +211,7 @@ export default function VideoPage() {
     const [user, setUser] = useState<any>(null);
     const [credits, setCredits] = useState<number | null>(null);
     const [sourceImage, setSourceImage] = useState<string | null>(null);
+    const [storyboardImages, setStoryboardImages] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedModel, setSelectedModel] = useState(MODELS[0]);
     const [prompt, setPrompt] = useState("");
@@ -303,6 +319,7 @@ export default function VideoPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     sourceImage,
+                    storyboardImages: (selectedModel as any).isStoryboard ? storyboardImages : undefined,
                     prompt,
                     model: selectedModel.id,
                     aspectRatio,
@@ -429,7 +446,8 @@ export default function VideoPage() {
                 {/* Left Column: Controls - Scrollable */}
                 <div className="lg:col-span-4 h-full flex flex-col min-h-0">
                 <div className="flex-1 overflow-y-auto pr-2 space-y-6 pb-4">
-                    {/* Source Image Preview */}
+                    {/* Source Image Preview - Regular mode */}
+                    {!(selectedModel as any).isStoryboard && (
                     <div className="bg-white p-4 rounded-xl border-2 border-black shadow-hard">
                         <div className="flex justify-between items-center mb-2">
                             <h2 className="font-black text-lg">Source Image</h2>
@@ -462,7 +480,7 @@ export default function VideoPage() {
                             ) : (
                                 <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
                                     <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
                                     <p className="font-bold text-sm">Click to upload image</p>
                                     <p className="text-xs">or drag and drop</p>
@@ -470,6 +488,63 @@ export default function VideoPage() {
                             )}
                         </div>
                     </div>
+                    )}
+
+                    {/* Storyboard Images - Storyboard mode */}
+                    {(selectedModel as any).isStoryboard && (
+                    <div className="bg-white p-4 rounded-xl border-2 border-black shadow-hard">
+                        <div className="flex justify-between items-center mb-2">
+                            <h2 className="font-black text-lg">🎬 Storyboard Frames</h2>
+                            <span className="text-xs font-bold text-gray-500">{storyboardImages.length} / 10 images</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-3">Upload 2-10 images to create a seamless video story</p>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={(e) => {
+                                const files = Array.from(e.target.files || []);
+                                files.forEach(file => {
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                        setStoryboardImages(prev => {
+                                            if (prev.length >= 10) return prev;
+                                            return [...prev, event.target?.result as string];
+                                        });
+                                    };
+                                    reader.readAsDataURL(file);
+                                });
+                                e.target.value = '';
+                            }}
+                            className="hidden"
+                            id="storyboard-input"
+                        />
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                            {storyboardImages.map((img, idx) => (
+                                <div key={idx} className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-300">
+                                    <img src={img} alt={`Frame ${idx + 1}`} className="w-full h-full object-cover" />
+                                    <div className="absolute top-1 left-1 bg-black text-white text-xs px-1 rounded font-bold">{idx + 1}</div>
+                                    <button
+                                        onClick={() => setStoryboardImages(prev => prev.filter((_, i) => i !== idx))}
+                                        className="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full text-xs font-bold hover:bg-red-600"
+                                    >×</button>
+                                </div>
+                            ))}
+                            {storyboardImages.length < 10 && (
+                                <label
+                                    htmlFor="storyboard-input"
+                                    className="aspect-video bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 hover:border-gray-400 transition-all"
+                                >
+                                    <span className="text-2xl text-gray-400">+</span>
+                                    <span className="text-xs text-gray-400 font-bold">Add</span>
+                                </label>
+                            )}
+                        </div>
+                        {storyboardImages.length < 2 && (
+                            <p className="text-xs text-orange-500 font-bold">⚠️ Add at least 2 images for storyboard</p>
+                        )}
+                    </div>
+                    )}
 
                     {/* Model Selection */}
                     <div className="bg-white p-4 rounded-xl border-2 border-black shadow-hard">
@@ -613,13 +688,15 @@ export default function VideoPage() {
                     <div className="shrink-0 pt-4 bg-gray-50">
                         <button
                             onClick={handleGenerateVideo}
-                            disabled={isGenerating || !sourceImage || (credits || 0) < selectedModel.cost || isRunwaySettingInvalid || isHailuoSettingInvalid}
+                            disabled={isGenerating || ((selectedModel as any).isStoryboard ? storyboardImages.length < 2 : !sourceImage) || (credits || 0) < selectedModel.cost || isRunwaySettingInvalid || isHailuoSettingInvalid}
                             className="w-full btn-pop bg-pop-purple text-white py-4 rounded-xl text-xl font-black shadow-hard hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                         >
                             {isGenerating ? (
                                 <span className="flex items-center justify-center gap-2">
                                     <span className="animate-spin">🍌</span> Generating...
                                 </span>
+                            ) : (selectedModel as any).isStoryboard ? (
+                                storyboardImages.length < 2 ? "Add at least 2 storyboard images" : `Generate Storyboard Video (${selectedModel.cost} 🍌)`
                             ) : !sourceImage ? (
                                 "Upload an image first"
                             ) : (

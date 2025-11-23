@@ -43,6 +43,7 @@ const MODEL_COSTS: Record<string, number> = {
   sora2_pro: 25,
   wan: 4,
   wan25: 6,
+  sora_storyboard: 30,
 };
 
 const STATUS_ENDPOINTS: Record<string, string> = {
@@ -58,6 +59,7 @@ const STATUS_ENDPOINTS: Record<string, string> = {
   sora2_pro: "https://api.kie.ai/api/v1/jobs/recordInfo",
   wan: "https://api.kie.ai/api/v1/jobs/recordInfo",
   wan25: "https://api.kie.ai/api/v1/jobs/recordInfo",
+  sora_storyboard: "https://api.kie.ai/api/v1/jobs/recordInfo",
 };
 
 async function deductCredits(supabase: any, userId: string, cost: number) {
