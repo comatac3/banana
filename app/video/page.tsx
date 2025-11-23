@@ -36,6 +36,21 @@ const MODELS = [
         }
     },
     {
+        id: 'veo3_transition',
+        name: 'Veo3 Transition',
+        description: 'Google Veo3 - Create video transition between 2 frames',
+        cost: 12,
+        badge: 'NEW',
+        requiresImage: true,
+        isTransition: true,
+        settings: {
+            aspectRatios: ['16:9', '9:16', '1:1'],
+            durations: [8],
+            defaultAspectRatio: '16:9',
+            defaultDuration: 8,
+        }
+    },
+    {
         id: 'runway',
         name: 'Runway Gen-3',
         description: 'Runway AI - Professional video generation',
@@ -212,6 +227,7 @@ export default function VideoPage() {
     const [credits, setCredits] = useState<number | null>(null);
     const [sourceImage, setSourceImage] = useState<string | null>(null);
     const [storyboardImages, setStoryboardImages] = useState<string[]>([]);
+    const [transitionImages, setTransitionImages] = useState<{first: string | null, last: string | null}>({first: null, last: null});
     const [loading, setLoading] = useState(true);
     const [selectedModel, setSelectedModel] = useState(MODELS[0]);
     const [prompt, setPrompt] = useState("");
@@ -320,6 +336,7 @@ export default function VideoPage() {
                 body: JSON.stringify({
                     sourceImage,
                     storyboardImages: (selectedModel as any).isStoryboard ? storyboardImages : undefined,
+                    transitionImages: (selectedModel as any).isTransition ? transitionImages : undefined,
                     prompt,
                     model: selectedModel.id,
                     aspectRatio,
@@ -546,6 +563,95 @@ export default function VideoPage() {
                     </div>
                     )}
 
+                    {/* Transition Images - Transition mode (Veo3 first/last frame) */}
+                    {(selectedModel as any).isTransition && (
+                    <div className="bg-white p-4 rounded-xl border-2 border-black shadow-hard">
+                        <h2 className="font-black text-lg mb-2">🎬 First & Last Frame</h2>
+                        <p className="text-xs text-gray-500 mb-3">AI creates a smooth video transition between these two frames</p>
+                        <div className="grid grid-cols-2 gap-3">
+                            {/* First Frame */}
+                            <div>
+                                <label className="block text-xs font-bold mb-1 text-center">Start Frame</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            const reader = new FileReader();
+                                            reader.onload = (event) => setTransitionImages(prev => ({...prev, first: event.target?.result as string}));
+                                            reader.readAsDataURL(file);
+                                        }
+                                        e.target.value = '';
+                                    }}
+                                    className="hidden"
+                                    id="transition-first"
+                                />
+                                <label
+                                    htmlFor="transition-first"
+                                    className="block aspect-video bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 overflow-hidden cursor-pointer hover:bg-gray-200 hover:border-gray-400 transition-all relative"
+                                >
+                                    {transitionImages.first ? (
+                                        <>
+                                            <img src={transitionImages.first} alt="First frame" className="w-full h-full object-cover" />
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); setTransitionImages(prev => ({...prev, first: null})); }}
+                                                className="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full text-xs font-bold hover:bg-red-600"
+                                            >×</button>
+                                        </>
+                                    ) : (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                                            <span className="text-2xl">1️⃣</span>
+                                            <span className="text-xs font-bold">First</span>
+                                        </div>
+                                    )}
+                                </label>
+                            </div>
+                            {/* Last Frame */}
+                            <div>
+                                <label className="block text-xs font-bold mb-1 text-center">End Frame</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            const reader = new FileReader();
+                                            reader.onload = (event) => setTransitionImages(prev => ({...prev, last: event.target?.result as string}));
+                                            reader.readAsDataURL(file);
+                                        }
+                                        e.target.value = '';
+                                    }}
+                                    className="hidden"
+                                    id="transition-last"
+                                />
+                                <label
+                                    htmlFor="transition-last"
+                                    className="block aspect-video bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 overflow-hidden cursor-pointer hover:bg-gray-200 hover:border-gray-400 transition-all relative"
+                                >
+                                    {transitionImages.last ? (
+                                        <>
+                                            <img src={transitionImages.last} alt="Last frame" className="w-full h-full object-cover" />
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); setTransitionImages(prev => ({...prev, last: null})); }}
+                                                className="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full text-xs font-bold hover:bg-red-600"
+                                            >×</button>
+                                        </>
+                                    ) : (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                                            <span className="text-2xl">2️⃣</span>
+                                            <span className="text-xs font-bold">Last</span>
+                                        </div>
+                                    )}
+                                </label>
+                            </div>
+                        </div>
+                        {(!transitionImages.first || !transitionImages.last) && (
+                            <p className="text-xs text-orange-500 font-bold mt-2">⚠️ Upload both start and end frames</p>
+                        )}
+                    </div>
+                    )}
+
                     {/* Model Selection */}
                     <div className="bg-white p-4 rounded-xl border-2 border-black shadow-hard">
                         <h2 className="font-black text-lg mb-4">Select AI Model</h2>
@@ -688,7 +794,7 @@ export default function VideoPage() {
                     <div className="shrink-0 pt-4 bg-gray-50">
                         <button
                             onClick={handleGenerateVideo}
-                            disabled={isGenerating || ((selectedModel as any).isStoryboard ? storyboardImages.length < 2 : !sourceImage) || (credits || 0) < selectedModel.cost || isRunwaySettingInvalid || isHailuoSettingInvalid}
+                            disabled={isGenerating || ((selectedModel as any).isStoryboard ? storyboardImages.length < 2 : (selectedModel as any).isTransition ? (!transitionImages.first || !transitionImages.last) : !sourceImage) || (credits || 0) < selectedModel.cost || isRunwaySettingInvalid || isHailuoSettingInvalid}
                             className="w-full btn-pop bg-pop-purple text-white py-4 rounded-xl text-xl font-black shadow-hard hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                         >
                             {isGenerating ? (
@@ -697,6 +803,8 @@ export default function VideoPage() {
                                 </span>
                             ) : (selectedModel as any).isStoryboard ? (
                                 storyboardImages.length < 2 ? "Add at least 2 storyboard images" : `Generate Storyboard Video (${selectedModel.cost} 🍌)`
+                            ) : (selectedModel as any).isTransition ? (
+                                (!transitionImages.first || !transitionImages.last) ? "Upload both frames first" : `Generate Transition Video (${selectedModel.cost} 🍌)`
                             ) : !sourceImage ? (
                                 "Upload an image first"
                             ) : (

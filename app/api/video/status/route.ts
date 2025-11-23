@@ -33,6 +33,7 @@ async function saveVideoAsset(
 const MODEL_COSTS: Record<string, number> = {
   veo3_fast: 6,
   veo3: 10,
+  veo3_transition: 12,
   runway: 8,
   kling: 8,
   seedance: 6,
@@ -49,6 +50,7 @@ const MODEL_COSTS: Record<string, number> = {
 const STATUS_ENDPOINTS: Record<string, string> = {
   veo3: "https://api.kie.ai/api/v1/veo/record-info",
   veo3_fast: "https://api.kie.ai/api/v1/veo/record-info",
+  veo3_transition: "https://api.kie.ai/api/v1/veo/record-info",
   runway: "https://api.kie.ai/api/v1/runway/record-detail",
   kling: "https://api.kie.ai/api/v1/jobs/recordInfo",
   seedance: "https://api.kie.ai/api/v1/jobs/recordInfo",

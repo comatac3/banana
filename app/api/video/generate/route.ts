@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 const MODEL_COSTS: Record<string, number> = {
   veo3_fast: 6,
   veo3: 10,
+  veo3_transition: 12,
   runway: 8,
   kling: 8,
   seedance: 6,
@@ -48,7 +49,7 @@ async function uploadImageToStorage(
 
 export async function POST(request: NextRequest) {
   try {
-    const { sourceImage, storyboardImages, prompt, model, aspectRatio = "16:9", duration = 5, resolution = "720p", quality = "standard" } = await request.json();
+    const { sourceImage, storyboardImages, transitionImages, prompt, model, aspectRatio = "16:9", duration = 5, resolution = "720p", quality = "standard" } = await request.json();
 
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -596,6 +597,45 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    // ============ VEO3 TRANSITION MODEL (First and Last Frame to Video) ============
+    if (model === "veo3_transition") {
+      if (!transitionImages || !transitionImages.first || !transitionImages.last) {
+        return NextResponse.json({ error: "Veo3 Transition requires both first and last frame images" }, { status: 400 });
+      }
+
+      // Upload both transition images
+      const firstImageUrl = await uploadImageToStorage(supabase, user.id, transitionImages.first);
+      const lastImageUrl = await uploadImageToStorage(supabase, user.id, transitionImages.last);
+
+      console.log("Uploaded transition images - first:", firstImageUrl ? '[url]' : 'none', "last:", lastImageUrl ? '[url]' : 'none');
+
+      const requestBody = {
+        prompt: videoPrompt,
+        model: "veo3", // Use veo3 model with transition generation type
+        aspectRatio: aspectRatio,
+        duration: 8,
+        generationType: "FIRST_AND_LAST_FRAMES_2_VIDEO",
+        imageUrls: [firstImageUrl, lastImageUrl], // First frame, then last frame
+        enableTranslation: true,
+      };
+
+      console.log("Veo3 Transition request:", JSON.stringify({ ...requestBody, imageUrls: ['[first]', '[last]'] }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/veo/generate", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const data = await response.json();
+      console.log("Veo3 Transition response:", JSON.stringify(data, null, 2));
+
+      if (!response.ok || data.code !== 200) {
+        throw new Error(data.msg || data.message || "Veo3 Transition generation failed");
+      }
+
+      return NextResponse.json({ operationId: data.data?.taskId, status: "processing", model });
     }
 
     return NextResponse.json({ error: `Model ${model} is not supported` }, { status: 400 });
