@@ -558,30 +558,16 @@ export async function POST(request: NextRequest) {
       // Aspect ratio: "landscape" or "portrait"
       const storyboardAspectRatio = aspectRatio === "portrait" ? "portrait" : "landscape";
 
-      // Build shots array - each image becomes a shot with duration and prompt
-      // Distribute duration so total equals exactly nFrames (10, 15, or 25)
-      const totalDuration = parseInt(nFrames);
-      const numShots = uploadedUrls.length;
-      const baseDuration = Math.floor(totalDuration / numShots);
-      const remainder = totalDuration % numShots;
-
-      const shots = uploadedUrls.map((url, index) => ({
-        imageUrl: url,
-        prompt: index === 0 ? videoPrompt : "",
-        // Give extra 1 second to first 'remainder' shots to make total exact
-        duration: String(baseDuration + (index < remainder ? 1 : 0)),
-      }));
-
       const requestBody = {
         model: "sora-2-pro-storyboard",
         input: {
           n_frames: nFrames,
-          shots: shots,
+          image_urls: uploadedUrls,
           aspect_ratio: storyboardAspectRatio,
         }
       };
 
-      console.log("Sora Storyboard request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, shots: `[${shots.length} shots]` } }, null, 2));
+      console.log("Sora Storyboard request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_urls: `[${uploadedUrls.length} images]` } }, null, 2));
 
       const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
         method: "POST",
