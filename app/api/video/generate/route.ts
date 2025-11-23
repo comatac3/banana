@@ -13,6 +13,8 @@ const MODEL_COSTS: Record<string, number> = {
   grok: 8,
   hailuo_standard: 5,
   hailuo_pro: 8,
+  sora2: 15,
+  sora2_pro: 25,
 };
 
 // Helper to upload image to Supabase Storage
@@ -43,7 +45,7 @@ async function uploadImageToStorage(
 
 export async function POST(request: NextRequest) {
   try {
-    const { sourceImage, prompt, model, aspectRatio = "16:9", duration = 5, resolution = "720p" } = await request.json();
+    const { sourceImage, prompt, model, aspectRatio = "16:9", duration = 5, resolution = "720p", quality = "standard" } = await request.json();
 
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -351,6 +353,71 @@ export async function POST(request: NextRequest) {
       if (!taskId) {
         console.log("Full Hailuo response (no taskId):", JSON.stringify(data, null, 2));
         throw new Error("No task ID returned from Hailuo API");
+      }
+
+      return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    // ============ SORA 2 MODELS (Image To Video) ============
+    if (model === "sora2" || model === "sora2_pro") {
+      if (!imageUrl) {
+        return NextResponse.json({ error: "Sora 2 requires an image" }, { status: 400 });
+      }
+
+      // Select model based on standard or pro
+      const soraModelId = model === "sora2_pro"
+        ? "sora-2-pro-image-to-video"
+        : "sora-2-image-to-video";
+
+      // Duration: n_frames = "10" or "15"
+      const nFrames = String(duration === 15 ? 15 : 10);
+
+      // Aspect ratio: "landscape" or "portrait"
+      const soraAspectRatio = aspectRatio === "portrait" ? "portrait" : "landscape";
+
+      const requestBody: Record<string, any> = {
+        model: soraModelId,
+        input: {
+          prompt: videoPrompt,
+          image_urls: [imageUrl],
+          aspect_ratio: soraAspectRatio,
+          n_frames: nFrames,
+          remove_watermark: true,
+        }
+      };
+
+      // Add size parameter only for Sora 2 Pro
+      if (model === "sora2_pro") {
+        requestBody.input.size = quality === "high" ? "high" : "standard";
+      }
+
+      console.log("Sora 2 request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_urls: ['[url]'] } }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const responseText = await response.text();
+      console.log("Sora 2 raw response:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Sora 2: Invalid response - ${responseText.substring(0, 200)}`);
+      }
+
+      if (!response.ok || (data.code && data.code !== 200)) {
+        console.log("Sora 2 error response:", JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || data.detail || JSON.stringify(data);
+        throw new Error(`Sora 2: ${errorMsg}`);
+      }
+
+      const taskId = data.data?.taskId || data.taskId || data.task_id || data.id;
+      if (!taskId) {
+        console.log("Full Sora 2 response (no taskId):", JSON.stringify(data, null, 2));
+        throw new Error("No task ID returned from Sora 2 API");
       }
 
       return NextResponse.json({ operationId: taskId, status: "processing", model });

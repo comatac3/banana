@@ -126,6 +126,36 @@ const MODELS = [
             defaultResolution: '768P',
         }
     },
+    {
+        id: 'sora2',
+        name: 'Sora 2',
+        description: 'OpenAI Sora 2 - Premium image-to-video (requires image)',
+        cost: 15,
+        badge: 'TOP',
+        requiresImage: true,
+        settings: {
+            aspectRatios: ['landscape', 'portrait'],
+            durations: [10, 15],
+            defaultAspectRatio: 'landscape',
+            defaultDuration: 10,
+        }
+    },
+    {
+        id: 'sora2_pro',
+        name: 'Sora 2 Pro',
+        description: 'OpenAI Sora 2 Pro - Ultimate quality (requires image)',
+        cost: 25,
+        badge: 'TOP',
+        requiresImage: true,
+        settings: {
+            aspectRatios: ['landscape', 'portrait'],
+            durations: [10, 15],
+            qualities: ['standard', 'high'],
+            defaultAspectRatio: 'landscape',
+            defaultDuration: 10,
+            defaultQuality: 'standard',
+        }
+    },
 ];
 
 export default function VideoPage() {
@@ -142,6 +172,7 @@ export default function VideoPage() {
     const [aspectRatio, setAspectRatio] = useState("16:9");
     const [duration, setDuration] = useState(8);
     const [resolution, setResolution] = useState("720p");
+    const [quality, setQuality] = useState("standard");
     const [isGenerating, setIsGenerating] = useState(false);
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -215,6 +246,9 @@ export default function VideoPage() {
         if (model.settings.defaultResolution) {
             setResolution(model.settings.defaultResolution);
         }
+        if ((model.settings as any).defaultQuality) {
+            setQuality((model.settings as any).defaultQuality);
+        }
     };
 
     // Check if current settings are valid for Runway (1080p + 10s not allowed)
@@ -244,6 +278,7 @@ export default function VideoPage() {
                     aspectRatio,
                     duration,
                     resolution,
+                    quality,
                 }),
             });
 
@@ -489,6 +524,24 @@ export default function VideoPage() {
                                         {selectedModel.settings.resolutions.map((res: string) => (
                                             <option key={res} value={res}>
                                                 {res} {res === '1080p' ? '(HD)' : '(Standard)'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Quality - Only for Sora 2 Pro */}
+                            {(selectedModel.settings as any).qualities && (
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Quality</label>
+                                    <select
+                                        value={quality}
+                                        onChange={(e) => setQuality(e.target.value)}
+                                        className="w-full p-2 border-2 border-gray-300 rounded-lg focus:border-black focus:ring-0 font-medium"
+                                    >
+                                        {(selectedModel.settings as any).qualities.map((q: string) => (
+                                            <option key={q} value={q}>
+                                                {q === 'high' ? 'High Quality' : 'Standard'}
                                             </option>
                                         ))}
                                     </select>

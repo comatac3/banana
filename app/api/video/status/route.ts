@@ -39,6 +39,8 @@ const MODEL_COSTS: Record<string, number> = {
   grok: 8,
   hailuo_standard: 5,
   hailuo_pro: 8,
+  sora2: 15,
+  sora2_pro: 25,
 };
 
 const STATUS_ENDPOINTS: Record<string, string> = {
@@ -50,6 +52,8 @@ const STATUS_ENDPOINTS: Record<string, string> = {
   grok: "https://api.kie.ai/api/v1/jobs/recordInfo",
   hailuo_standard: "https://api.kie.ai/api/v1/jobs/recordInfo",
   hailuo_pro: "https://api.kie.ai/api/v1/jobs/recordInfo",
+  sora2: "https://api.kie.ai/api/v1/jobs/recordInfo",
+  sora2_pro: "https://api.kie.ai/api/v1/jobs/recordInfo",
 };
 
 async function deductCredits(supabase: any, userId: string, cost: number) {
