@@ -566,7 +566,7 @@ export async function POST(request: NextRequest) {
       const remainder = totalDuration % numShots;
 
       const shots = uploadedUrls.map((url, index) => ({
-        image_url: url,
+        imageUrl: url,
         prompt: index === 0 ? videoPrompt : "",
         // Give extra 1 second to first 'remainder' shots to make total exact
         duration: String(baseDuration + (index < remainder ? 1 : 0)),
