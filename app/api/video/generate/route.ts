@@ -11,7 +11,8 @@ const MODEL_COSTS: Record<string, number> = {
   kling: 8,
   seedance: 6,
   grok: 8,
-  hailuo: 8,
+  hailuo_standard: 5,
+  hailuo_pro: 8,
 };
 
 // Helper to upload image to Supabase Storage
@@ -292,8 +293,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ operationId: taskId, status: "processing", model });
     }
 
-    // ============ HAILUO MODEL (2.3 Image To Video Pro) ============
-    if (model === "hailuo") {
+    // ============ HAILUO MODELS (2.3 Image To Video Standard/Pro) ============
+    if (model === "hailuo_standard" || model === "hailuo_pro") {
       if (!imageUrl) {
         return NextResponse.json({ error: "Hailuo requires an image" }, { status: 400 });
       }
@@ -308,8 +309,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Hailuo: 1080P resolution cannot be used with 10s duration" }, { status: 400 });
       }
 
+      // Select model based on standard or pro
+      const hailuoModelId = model === "hailuo_pro"
+        ? "hailuo/2-3-image-to-video-pro"
+        : "hailuo/2-3-image-to-video-standard";
+
       const requestBody = {
-        model: "hailuo/2-3-image-to-video-pro",
+        model: hailuoModelId,
         input: {
           prompt: videoPrompt,
           image_url: imageUrl,

@@ -95,7 +95,23 @@ const MODELS = [
         }
     },
     {
-        id: 'hailuo',
+        id: 'hailuo_standard',
+        name: 'Hailuo 2.3',
+        description: 'Hailuo AI - Standard image-to-video (requires image)',
+        cost: 5,
+        badge: 'FAST',
+        requiresImage: true,
+        settings: {
+            aspectRatios: ['16:9'],
+            durations: [6, 10],
+            resolutions: ['768P', '1080P'],
+            defaultAspectRatio: '16:9',
+            defaultDuration: 6,
+            defaultResolution: '768P',
+        }
+    },
+    {
+        id: 'hailuo_pro',
         name: 'Hailuo 2.3 Pro',
         description: 'Hailuo AI - High quality image-to-video (requires image)',
         cost: 8,
@@ -204,7 +220,7 @@ export default function VideoPage() {
     // Check if current settings are valid for Runway (1080p + 10s not allowed)
     const isRunwaySettingInvalid = selectedModel.id === 'runway' && resolution === '1080p' && duration === 10;
     // Check if current settings are valid for Hailuo (1080P + 10s not allowed)
-    const isHailuoSettingInvalid = selectedModel.id === 'hailuo' && resolution === '1080P' && duration === 10;
+    const isHailuoSettingInvalid = (selectedModel.id === 'hailuo_standard' || selectedModel.id === 'hailuo_pro') && resolution === '1080P' && duration === 10;
 
     const handleGenerateVideo = async () => {
         if (!user || !credits || credits < selectedModel.cost) {
