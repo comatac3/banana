@@ -156,6 +156,20 @@ const MODELS = [
             defaultQuality: 'standard',
         }
     },
+    {
+        id: 'wan',
+        name: 'WAN 2.2 Turbo',
+        description: 'WAN AI - Fast image-to-video turbo (requires image)',
+        cost: 4,
+        badge: 'FAST',
+        requiresImage: true,
+        settings: {
+            aspectRatios: ['auto', '16:9', '9:16', '1:1'],
+            resolutions: ['480p', '580p', '720p'],
+            defaultAspectRatio: 'auto',
+            defaultResolution: '720p',
+        }
+    },
 ];
 
 export default function VideoPage() {
