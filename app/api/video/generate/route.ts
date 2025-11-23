@@ -1,0 +1,303 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/utils/supabase/server";
+import sharp from "sharp";
+import { v4 as uuidv4 } from "uuid";
+
+// Model costs in credits
+const MODEL_COSTS: Record<string, number> = {
+  veo3_fast: 6,
+  veo3: 10,
+  runway: 8,
+  kling: 8,
+  seedance: 6,
+  grok: 8,
+};
+
+// Helper to upload image to Supabase Storage
+async function uploadImageToStorage(
+  supabase: any,
+  userId: string,
+  base64Data: string
+): Promise<string> {
+  const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const buffer = Buffer.from(base64, 'base64');
+
+  const compressed = await sharp(buffer)
+    .resize(1280, 720, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+  const fileName = `video-source/${userId}/${uuidv4()}.jpg`;
+
+  const { error } = await supabase.storage
+    .from('images')
+    .upload(fileName, compressed, { contentType: 'image/jpeg', upsert: true });
+
+  if (error) throw new Error(`Failed to upload image: ${error.message}`);
+
+  const { data: urlData } = supabase.storage.from('images').getPublicUrl(fileName);
+  return urlData.publicUrl;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const { sourceImage, prompt, model, aspectRatio = "16:9", duration = 5, resolution = "720p" } = await request.json();
+
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const cost = MODEL_COSTS[model] || 8;
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('credits')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError || !profile || profile.credits < cost) {
+      return NextResponse.json({ error: "Insufficient credits" }, { status: 403 });
+    }
+
+    const KIE_API_KEY = process.env.KIE_API_KEY;
+    if (!KIE_API_KEY) {
+      return NextResponse.json({ error: "KIE_API_KEY is not configured" }, { status: 500 });
+    }
+
+    const videoPrompt = prompt || "A gentle camera movement with cinematic lighting.";
+
+    let imageUrl: string | null = null;
+    if (sourceImage) {
+      imageUrl = await uploadImageToStorage(supabase, user.id, sourceImage);
+      console.log("Uploaded image URL:", imageUrl);
+    }
+
+    // ============ VEO3 MODELS ============
+    if (model === "veo3" || model === "veo3_fast") {
+      const requestBody: Record<string, any> = {
+        prompt: videoPrompt,
+        model: model === "veo3" ? "veo3" : "veo3_fast",
+        aspectRatio: aspectRatio,
+        duration: duration,
+        enableTranslation: true,
+      };
+      if (imageUrl) {
+        requestBody.generationType = "FIRST_AND_LAST_FRAMES_2_VIDEO";
+        requestBody.imageUrls = [imageUrl];
+      }
+
+      console.log("Veo3 request:", JSON.stringify({ ...requestBody, imageUrls: imageUrl ? ['[url]'] : undefined }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/veo/generate", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const data = await response.json();
+      console.log("Veo3 response:", JSON.stringify(data, null, 2));
+
+      if (!response.ok || data.code !== 200) {
+        throw new Error(data.msg || data.message || "Veo3 generation failed");
+      }
+      return NextResponse.json({ operationId: data.data?.taskId, status: "processing", model });
+    }
+
+    // ============ RUNWAY MODEL ============
+    if (model === "runway") {
+      // Default resolution to 720p if not set
+      const runwayQuality = resolution || "720p";
+
+      // Validate: 1080p cannot be used with 10s duration
+      if (runwayQuality === "1080p" && duration === 10) {
+        return NextResponse.json({ error: "Runway: 1080p resolution cannot be used with 10s duration" }, { status: 400 });
+      }
+
+      const requestBody: Record<string, any> = {
+        prompt: videoPrompt,
+        duration: duration,
+        quality: runwayQuality,
+      };
+      // aspectRatio only for text-to-video, ignored when imageUrl is present
+      if (imageUrl) {
+        requestBody.imageUrl = imageUrl;
+      } else {
+        requestBody.aspectRatio = aspectRatio;
+      }
+
+      console.log("Runway request:", JSON.stringify({ ...requestBody, imageUrl: imageUrl ? '[url]' : undefined }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/runway/generate", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const data = await response.json();
+      console.log("Runway response:", JSON.stringify(data, null, 2));
+
+      if (!response.ok || data.code !== 200) {
+        throw new Error(data.msg || data.message || "Runway generation failed");
+      }
+      return NextResponse.json({ operationId: data.data?.taskId, status: "processing", model });
+    }
+
+    // ============ KLING MODEL ============
+    if (model === "kling") {
+      // Use the /api/v1/jobs/createTask endpoint with model and input structure
+      const requestBody: Record<string, any> = {
+        model: "kling/v2-1-master-image-to-video",
+        input: {
+          prompt: videoPrompt,
+          duration: String(duration),
+          aspect_ratio: aspectRatio,
+        }
+      };
+      if (imageUrl) {
+        requestBody.input.image_url = imageUrl;
+      }
+
+      console.log("Kling request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_url: imageUrl ? '[url]' : undefined } }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const responseText = await response.text();
+      console.log("Kling raw response:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Kling: Invalid response - ${responseText.substring(0, 200)}`);
+      }
+
+      if (!response.ok || (data.code && data.code !== 200)) {
+        console.log("Kling error response:", JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || data.detail || JSON.stringify(data);
+        throw new Error(`Kling: ${errorMsg}`);
+      }
+
+      const taskId = data.data?.taskId || data.taskId || data.task_id || data.id;
+      if (!taskId) {
+        console.log("Full Kling response (no taskId):", JSON.stringify(data, null, 2));
+        throw new Error("No task ID returned from Kling API");
+      }
+
+      return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    // ============ SEEDANCE MODEL (V1 Pro Fast Image To Video) ============
+    if (model === "seedance") {
+      if (!imageUrl) {
+        return NextResponse.json({ error: "Seedance requires an image" }, { status: 400 });
+      }
+
+      // Default resolution to 720p if not set (options: 720p, 1080p)
+      const seedanceResolution = resolution || "720p";
+      // Duration must be "5" or "10"
+      const seedanceDuration = String(duration === 10 ? 10 : 5);
+
+      const requestBody = {
+        model: "bytedance/v1-pro-fast-image-to-video",
+        input: {
+          prompt: videoPrompt,
+          image_url: imageUrl,
+          resolution: seedanceResolution,
+          duration: seedanceDuration,
+        }
+      };
+
+      console.log("Seedance request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_url: '[url]' } }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const responseText = await response.text();
+      console.log("Seedance raw response:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Seedance: Invalid response - ${responseText.substring(0, 200)}`);
+      }
+
+      // Check for errors
+      if (!response.ok || (data.code && data.code !== 200)) {
+        console.log("Seedance error response:", JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || data.detail || JSON.stringify(data);
+        throw new Error(`Seedance: ${errorMsg}`);
+      }
+
+      // Handle different response structures
+      const taskId = data.data?.taskId || data.taskId || data.task_id || data.id;
+      if (!taskId) {
+        console.log("Full Seedance response (no taskId):", JSON.stringify(data, null, 2));
+        throw new Error("No task ID returned from Seedance API");
+      }
+
+      return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    // ============ GROK MODEL (Image To Video) ============
+    if (model === "grok") {
+      if (!imageUrl) {
+        return NextResponse.json({ error: "Grok requires an image" }, { status: 400 });
+      }
+
+      const requestBody = {
+        model: "grok-imagine/image-to-video",
+        input: {
+          image_urls: [imageUrl],
+          prompt: videoPrompt,
+          mode: "normal", // "fun", "normal", "spicy" (spicy not supported for external images)
+        }
+      };
+
+      console.log("Grok request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_urls: ['[url]'] } }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const responseText = await response.text();
+      console.log("Grok raw response:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Grok: Invalid response - ${responseText.substring(0, 200)}`);
+      }
+
+      if (!response.ok || (data.code && data.code !== 200)) {
+        console.log("Grok error response:", JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || data.detail || JSON.stringify(data);
+        throw new Error(`Grok: ${errorMsg}`);
+      }
+
+      const taskId = data.data?.taskId || data.taskId || data.task_id || data.id;
+      if (!taskId) {
+        console.log("Full Grok response (no taskId):", JSON.stringify(data, null, 2));
+        throw new Error("No task ID returned from Grok API");
+      }
+
+      return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    return NextResponse.json({ error: `Model ${model} is not supported` }, { status: 400 });
+
+  } catch (error: any) {
+    console.error("Error generating video:", error);
+    return NextResponse.json(
+      { error: error.message || "Failed to generate video.", details: "An unexpected error occurred" },
+      { status: 500 }
+    );
+  }
+}
