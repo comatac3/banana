@@ -243,7 +243,32 @@ export default function VideoPage() {
     const [showAssetPicker, setShowAssetPicker] = useState(false);
     const [imageAssets, setImageAssets] = useState<any[]>([]);
     const [loadingAssets, setLoadingAssets] = useState(false);
+    const [progressStep, setProgressStep] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Progress messages for video generation
+    const progressMessages = [
+        { text: "Analyzing your image...", icon: "🔍" },
+        { text: "Understanding the scene...", icon: "🧠" },
+        { text: "Planning camera movements...", icon: "🎥" },
+        { text: "Generating frames...", icon: "🖼️" },
+        { text: "Adding motion effects...", icon: "✨" },
+        { text: "Rendering video...", icon: "⚡" },
+        { text: "Applying final touches...", icon: "🎨" },
+        { text: "Almost ready...", icon: "🍌" },
+    ];
+
+    // Cycle through progress messages while generating
+    useEffect(() => {
+        if (!isGenerating) {
+            setProgressStep(0);
+            return;
+        }
+        const interval = setInterval(() => {
+            setProgressStep((prev) => (prev + 1) % progressMessages.length);
+        }, 4000);
+        return () => clearInterval(interval);
+    }, [isGenerating]);
 
     // Fetch image assets from database
     const fetchImageAssets = async () => {
@@ -948,11 +973,24 @@ export default function VideoPage() {
                                             ))}
                                         </div>
 
-                                        <p className="font-black text-xl mt-6 bg-gradient-to-r from-purple-400 via-pink-400 to-yellow-400 bg-clip-text text-transparent animate-pulse">
-                                            Creating magic...
-                                        </p>
-                                        <p className="text-gray-500 text-sm mt-2 animate-pulse">
-                                            This may take a few minutes
+                                        <div className="mt-6">
+                                            <p className="font-black text-2xl mb-2">
+                                                {progressMessages[progressStep].icon}
+                                            </p>
+                                            <p className="font-black text-xl bg-gradient-to-r from-purple-400 via-pink-400 to-yellow-400 bg-clip-text text-transparent">
+                                                {progressMessages[progressStep].text}
+                                            </p>
+                                        </div>
+                                        <div className="mt-4 flex justify-center gap-1">
+                                            {progressMessages.map((_, i) => (
+                                                <div
+                                                    key={i}
+                                                    className={`w-2 h-2 rounded-full transition-all duration-300 ${i <= progressStep ? 'bg-purple-500' : 'bg-gray-600'}`}
+                                                />
+                                            ))}
+                                        </div>
+                                        <p className="text-gray-500 text-xs mt-3">
+                                            Step {progressStep + 1} of {progressMessages.length}
                                         </p>
                                     </div>
                                 </div>
