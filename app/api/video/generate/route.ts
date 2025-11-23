@@ -559,12 +559,17 @@ export async function POST(request: NextRequest) {
       const storyboardAspectRatio = aspectRatio === "portrait" ? "portrait" : "landscape";
 
       // Build shots array - each image becomes a shot with duration and prompt
-      // Distribute duration evenly across shots
-      const shotDuration = Math.floor(parseInt(nFrames) / uploadedUrls.length);
+      // Distribute duration so total equals exactly nFrames (10, 15, or 25)
+      const totalDuration = parseInt(nFrames);
+      const numShots = uploadedUrls.length;
+      const baseDuration = Math.floor(totalDuration / numShots);
+      const remainder = totalDuration % numShots;
+
       const shots = uploadedUrls.map((url, index) => ({
         image_url: url,
         prompt: index === 0 ? videoPrompt : "",
-        duration: String(shotDuration),
+        // Give extra 1 second to first 'remainder' shots to make total exact
+        duration: String(baseDuration + (index < remainder ? 1 : 0)),
       }));
 
       const requestBody = {
