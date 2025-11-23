@@ -94,6 +94,22 @@ const MODELS = [
             defaultDuration: 5,
         }
     },
+    {
+        id: 'hailuo',
+        name: 'Hailuo 2.3 Pro',
+        description: 'Hailuo AI - High quality image-to-video (requires image)',
+        cost: 8,
+        badge: 'PRO',
+        requiresImage: true,
+        settings: {
+            aspectRatios: ['16:9'],
+            durations: [6, 10],
+            resolutions: ['768P', '1080P'],
+            defaultAspectRatio: '16:9',
+            defaultDuration: 6,
+            defaultResolution: '768P',
+        }
+    },
 ];
 
 export default function VideoPage() {
@@ -187,6 +203,8 @@ export default function VideoPage() {
 
     // Check if current settings are valid for Runway (1080p + 10s not allowed)
     const isRunwaySettingInvalid = selectedModel.id === 'runway' && resolution === '1080p' && duration === 10;
+    // Check if current settings are valid for Hailuo (1080P + 10s not allowed)
+    const isHailuoSettingInvalid = selectedModel.id === 'hailuo' && resolution === '1080P' && duration === 10;
 
     const handleGenerateVideo = async () => {
         if (!user || !credits || credits < selectedModel.cost) {
@@ -482,6 +500,12 @@ export default function VideoPage() {
                                 ⚠️ Runway: 1080p resolution cannot be used with 10s duration
                             </div>
                         )}
+                        {/* Warning for Hailuo 1080P + 10s */}
+                        {isHailuoSettingInvalid && (
+                            <div className="mt-3 p-2 bg-yellow-100 border-2 border-yellow-400 rounded-lg text-sm font-bold text-yellow-800">
+                                ⚠️ Hailuo: 1080P resolution cannot be used with 10s duration
+                            </div>
+                        )}
                     </div>
 
                     </div>
@@ -490,7 +514,7 @@ export default function VideoPage() {
                     <div className="shrink-0 pt-4 bg-gray-50">
                         <button
                             onClick={handleGenerateVideo}
-                            disabled={isGenerating || !sourceImage || (credits || 0) < selectedModel.cost || isRunwaySettingInvalid}
+                            disabled={isGenerating || !sourceImage || (credits || 0) < selectedModel.cost || isRunwaySettingInvalid || isHailuoSettingInvalid}
                             className="w-full btn-pop bg-pop-purple text-white py-4 rounded-xl text-xl font-black shadow-hard hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                         >
                             {isGenerating ? (

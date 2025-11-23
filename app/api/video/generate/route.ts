@@ -11,6 +11,7 @@ const MODEL_COSTS: Record<string, number> = {
   kling: 8,
   seedance: 6,
   grok: 8,
+  hailuo: 8,
 };
 
 // Helper to upload image to Supabase Storage
@@ -286,6 +287,64 @@ export async function POST(request: NextRequest) {
       if (!taskId) {
         console.log("Full Grok response (no taskId):", JSON.stringify(data, null, 2));
         throw new Error("No task ID returned from Grok API");
+      }
+
+      return NextResponse.json({ operationId: taskId, status: "processing", model });
+    }
+
+    // ============ HAILUO MODEL (2.3 Image To Video Pro) ============
+    if (model === "hailuo") {
+      if (!imageUrl) {
+        return NextResponse.json({ error: "Hailuo requires an image" }, { status: 400 });
+      }
+
+      // Resolution: 768P or 1080P
+      const hailuoResolution = resolution === "1080P" ? "1080P" : "768P";
+      // Duration: 6 or 10 (10s not supported for 1080P)
+      const hailuoDuration = String(duration === 10 ? 10 : 6);
+
+      // Validate: 1080P cannot be used with 10s duration
+      if (hailuoResolution === "1080P" && hailuoDuration === "10") {
+        return NextResponse.json({ error: "Hailuo: 1080P resolution cannot be used with 10s duration" }, { status: 400 });
+      }
+
+      const requestBody = {
+        model: "hailuo/2-3-image-to-video-pro",
+        input: {
+          prompt: videoPrompt,
+          image_url: imageUrl,
+          duration: hailuoDuration,
+          resolution: hailuoResolution,
+        }
+      };
+
+      console.log("Hailuo request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_url: '[url]' } }, null, 2));
+
+      const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${KIE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const responseText = await response.text();
+      console.log("Hailuo raw response:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Hailuo: Invalid response - ${responseText.substring(0, 200)}`);
+      }
+
+      if (!response.ok || (data.code && data.code !== 200)) {
+        console.log("Hailuo error response:", JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || data.detail || JSON.stringify(data);
+        throw new Error(`Hailuo: ${errorMsg}`);
+      }
+
+      const taskId = data.data?.taskId || data.taskId || data.task_id || data.id;
+      if (!taskId) {
+        console.log("Full Hailuo response (no taskId):", JSON.stringify(data, null, 2));
+        throw new Error("No task ID returned from Hailuo API");
       }
 
       return NextResponse.json({ operationId: taskId, status: "processing", model });
