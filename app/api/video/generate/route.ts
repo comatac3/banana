@@ -558,16 +558,22 @@ export async function POST(request: NextRequest) {
       // Aspect ratio: "landscape" or "portrait"
       const storyboardAspectRatio = aspectRatio === "portrait" ? "portrait" : "landscape";
 
+      // Build shots array - each image becomes a shot with optional prompt
+      const shots = uploadedUrls.map((url, index) => ({
+        image_url: url,
+        prompt: index === 0 ? videoPrompt : "", // Use main prompt for first shot
+      }));
+
       const requestBody = {
         model: "sora-2-pro-storyboard",
         input: {
           n_frames: nFrames,
-          image_urls: uploadedUrls,
+          shots: shots,
           aspect_ratio: storyboardAspectRatio,
         }
       };
 
-      console.log("Sora Storyboard request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, image_urls: `[${uploadedUrls.length} images]` } }, null, 2));
+      console.log("Sora Storyboard request:", JSON.stringify({ ...requestBody, input: { ...requestBody.input, shots: `[${shots.length} shots]` } }, null, 2));
 
       const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
         method: "POST",
