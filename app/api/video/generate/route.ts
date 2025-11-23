@@ -78,8 +78,15 @@ export async function POST(request: NextRequest) {
 
     let imageUrl: string | null = null;
     if (sourceImage) {
-      imageUrl = await uploadImageToStorage(supabase, user.id, sourceImage);
-      console.log("Uploaded image URL:", imageUrl);
+      // If sourceImage is already a URL (from assets), use it directly
+      if (sourceImage.startsWith('http://') || sourceImage.startsWith('https://')) {
+        imageUrl = sourceImage;
+        console.log("Using existing image URL:", imageUrl);
+      } else {
+        // Otherwise, it's base64 data that needs to be uploaded
+        imageUrl = await uploadImageToStorage(supabase, user.id, sourceImage);
+        console.log("Uploaded image URL:", imageUrl);
+      }
     }
 
     // ============ VEO3 MODELS ============
