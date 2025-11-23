@@ -558,10 +558,13 @@ export async function POST(request: NextRequest) {
       // Aspect ratio: "landscape" or "portrait"
       const storyboardAspectRatio = aspectRatio === "portrait" ? "portrait" : "landscape";
 
-      // Build shots array - each image becomes a shot with optional prompt
+      // Build shots array - each image becomes a shot with duration and prompt
+      // Distribute duration evenly across shots
+      const shotDuration = Math.floor(parseInt(nFrames) / uploadedUrls.length);
       const shots = uploadedUrls.map((url, index) => ({
         image_url: url,
-        prompt: index === 0 ? videoPrompt : "", // Use main prompt for first shot
+        prompt: index === 0 ? videoPrompt : "",
+        duration: String(shotDuration),
       }));
 
       const requestBody = {
