@@ -12,7 +12,7 @@ export default function Login() {
         try {
             const redirectTo = `${window.location.origin}/auth/callback`;
             const { error } = await supabase.auth.signInWithOAuth({
-                provider: provider,
+                provider: provider as any,
                 options: {
                     redirectTo,
                 },
