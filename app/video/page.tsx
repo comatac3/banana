@@ -240,7 +240,42 @@ export default function VideoPage() {
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [errorDetails, setErrorDetails] = useState<string | null>(null);
+    const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [imageAssets, setImageAssets] = useState<any[]>([]);
+    const [loadingAssets, setLoadingAssets] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Fetch image assets from database
+    const fetchImageAssets = async () => {
+        if (!user) return;
+        setLoadingAssets(true);
+        try {
+            const { data, error } = await supabase
+                .from('assets')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('type', 'image')
+                .order('created_at', { ascending: false })
+                .limit(50);
+
+            if (!error && data) {
+                setImageAssets(data);
+            }
+        } catch (e) {
+            console.error("Error fetching assets:", e);
+        }
+        setLoadingAssets(false);
+    };
+
+    const openAssetPicker = () => {
+        fetchImageAssets();
+        setShowAssetPicker(true);
+    };
+
+    const selectAssetImage = (url: string) => {
+        setSourceImage(url);
+        setShowAssetPicker(false);
+    };
 
     useEffect(() => {
         const init = async () => {
@@ -470,12 +505,20 @@ export default function VideoPage() {
                         <div className="flex justify-between items-center mb-2">
                             <h2 className="font-black text-lg">Source Image</h2>
                             {sourceImage && (
-                                <button
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
-                                >
-                                    Change
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={openAssetPicker}
+                                        className="text-xs font-bold text-purple-600 hover:text-purple-800 hover:underline"
+                                    >
+                                        Assets
+                                    </button>
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                                    >
+                                        Upload
+                                    </button>
+                                </div>
                             )}
                         </div>
                         <input
@@ -485,26 +528,36 @@ export default function VideoPage() {
                             onChange={handleImageChange}
                             className="hidden"
                         />
-                        <div
-                            className={`aspect-video bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 relative ${!sourceImage ? 'cursor-pointer hover:bg-gray-200 hover:border-gray-400 transition-all' : ''}`}
-                            onClick={() => !sourceImage && fileInputRef.current?.click()}
-                        >
-                            {sourceImage ? (
+                        {sourceImage ? (
+                            <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 relative">
                                 <img
                                     src={sourceImage}
                                     alt="Source"
                                     className="w-full h-full object-contain"
                                 />
-                            ) : (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                                    <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="aspect-video bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:bg-gray-200 hover:border-gray-400 transition-all"
+                                >
+                                    <svg className="w-8 h-8 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                     </svg>
-                                    <p className="font-bold text-sm">Click to upload image</p>
-                                    <p className="text-xs">or drag and drop</p>
-                                </div>
-                            )}
-                        </div>
+                                    <p className="font-bold text-xs">Upload</p>
+                                </button>
+                                <button
+                                    onClick={openAssetPicker}
+                                    className="aspect-video bg-purple-50 rounded-lg border-2 border-dashed border-purple-300 flex flex-col items-center justify-center text-purple-400 hover:bg-purple-100 hover:border-purple-400 transition-all"
+                                >
+                                    <svg className="w-8 h-8 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    <p className="font-bold text-xs">From Assets</p>
+                                </button>
+                            </div>
+                        )}
                     </div>
                     )}
 
@@ -933,6 +986,53 @@ export default function VideoPage() {
                     </div>
                 </div>
             </main>
+
+            {/* Asset Picker Modal */}
+            {showAssetPicker && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl border-4 border-black shadow-hard-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
+                        <div className="p-4 border-b-2 border-black flex justify-between items-center shrink-0">
+                            <h2 className="font-black text-xl">Select from Assets</h2>
+                            <button
+                                onClick={() => setShowAssetPicker(false)}
+                                className="text-gray-500 hover:text-black text-2xl font-bold"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {loadingAssets ? (
+                                <div className="text-center py-8">
+                                    <div className="text-4xl animate-bounce mb-2">🍌</div>
+                                    <p className="font-bold text-gray-500">Loading assets...</p>
+                                </div>
+                            ) : imageAssets.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <div className="text-4xl mb-2 opacity-50">📁</div>
+                                    <p className="font-bold text-gray-500">No image assets found</p>
+                                    <p className="text-sm text-gray-400 mt-1">Generate some images in the Studio first!</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-3 gap-3">
+                                    {imageAssets.map((asset) => (
+                                        <button
+                                            key={asset.id}
+                                            onClick={() => selectAssetImage(asset.url)}
+                                            className="aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-black hover:shadow-hard transition-all"
+                                        >
+                                            <img
+                                                src={asset.thumbnail_url || asset.url}
+                                                alt={asset.prompt || 'Asset'}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
