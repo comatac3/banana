@@ -760,6 +760,7 @@ export default function VideoPage() {
                             )}
 
                             {/* Duration */}
+                            {selectedModel.settings.durations && (
                             <div>
                                 <label className="block text-sm font-bold mb-2">Duration</label>
                                 <select
@@ -772,6 +773,7 @@ export default function VideoPage() {
                                     ))}
                                 </select>
                             </div>
+                            )}
                         </div>
 
                         {/* Warning for Runway 1080p + 10s */}
