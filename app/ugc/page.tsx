@@ -45,18 +45,25 @@ export default function UGCPage() {
     const [productImage, setProductImage] = useState<string | null>(null);
     const [script, setScript] = useState("");
     const [selectedStyle, setSelectedStyle] = useState(UGC_STYLES[0]);
-    const [duration, setDuration] = useState(15);
+    const [duration, setDuration] = useState(16);
     const [language, setLanguage] = useState("th");
     const [veoModel, setVeoModel] = useState("veo3");
 
-    // Calculate cost based on selected veo model
+    // Calculate number of 8-second segments needed
+    const getSegmentCount = () => {
+        return Math.ceil(duration / 8);
+    };
+
+    // Calculate cost based on selected veo model and number of segments
     const getModelCost = () => {
-        return veoModel === "veo3_fast" ? 6 : 10;
+        const baseCost = veoModel === "veo3_fast" ? 6 : 10;
+        return baseCost * getSegmentCount();
     };
 
     const [isGenerating, setIsGenerating] = useState(false);
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -122,65 +129,107 @@ export default function UGCPage() {
         setVideoUrl(null);
         setErrorMessage(null);
 
+        const segmentCount = getSegmentCount();
+        setGenerationProgress({ current: 0, total: segmentCount });
+
         try {
             // Generate UGC-style prompt based on selected style and script
-            let ugcPrompt = "";
+            let ugcPromptBase = "";
             switch (selectedStyle.id) {
                 case 'casual_review':
-                    ugcPrompt = `UGC style video: Natural person holding phone, casual product review. ${script}. Handheld camera, authentic feel, direct to camera, indoor natural lighting.`;
+                    ugcPromptBase = `UGC style video: Natural person holding phone, casual product review. ${script}. Handheld camera, authentic feel, direct to camera, indoor natural lighting.`;
                     break;
                 case 'unboxing':
-                    ugcPrompt = `UGC style video: Excited unboxing and first impression. ${script}. Hands opening package, revealing product, genuine excitement, handheld phone camera.`;
+                    ugcPromptBase = `UGC style video: Excited unboxing and first impression. ${script}. Hands opening package, revealing product, genuine excitement, handheld phone camera.`;
                     break;
                 case 'before_after':
-                    ugcPrompt = `UGC style video: Before and after transformation showcase. ${script}. Comparison shots, results demonstration, authentic testimonial style.`;
+                    ugcPromptBase = `UGC style video: Before and after transformation showcase. ${script}. Comparison shots, results demonstration, authentic testimonial style.`;
                     break;
                 case 'tutorial':
-                    ugcPrompt = `UGC style video: Step-by-step tutorial showing product usage. ${script}. Close-up hands demonstrating, clear instructions, helpful and friendly tone.`;
+                    ugcPromptBase = `UGC style video: Step-by-step tutorial showing product usage. ${script}. Close-up hands demonstrating, clear instructions, helpful and friendly tone.`;
                     break;
             }
 
-            const response = await fetch("/api/video/generate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    sourceImage: productImage,
-                    prompt: ugcPrompt,
-                    model: veoModel,
-                    aspectRatio: "9:16", // Vertical for mobile/social
-                    duration: 8,
-                }),
-            });
+            // Generate multiple segments
+            const videoUrls: string[] = [];
+            for (let i = 0; i < segmentCount; i++) {
+                setGenerationProgress({ current: i + 1, total: segmentCount });
 
-            const data = await response.json();
+                // Add segment context to prompt
+                const segmentPrompt = segmentCount > 1
+                    ? `${ugcPromptBase} Part ${i + 1} of ${segmentCount}.`
+                    : ugcPromptBase;
 
-            if (!response.ok) {
-                throw new Error(data.error || "Failed to generate UGC video");
+                const response = await fetch("/api/video/generate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        sourceImage: productImage,
+                        prompt: segmentPrompt,
+                        model: veoModel,
+                        aspectRatio: "9:16",
+                        duration: 8,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || `Failed to generate segment ${i + 1}`);
+                }
+
+                // Poll for this segment
+                let segmentUrl = null;
+                if (data.videoUrl) {
+                    segmentUrl = data.videoUrl;
+                } else if (data.operationId) {
+                    segmentUrl = await pollForVideo(data.operationId);
+                }
+
+                if (segmentUrl) {
+                    videoUrls.push(segmentUrl);
+                }
             }
 
-            // If we got a video URL directly
-            if (data.videoUrl) {
-                setVideoUrl(data.videoUrl);
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('credits')
-                    .eq('id', user.id)
-                    .single();
-                setCredits(profile?.credits ?? 0);
+            // If single segment, use it directly
+            if (videoUrls.length === 1) {
+                setVideoUrl(videoUrls[0]);
             }
-            // If generation is async, start polling
-            else if (data.operationId) {
-                await pollForVideo(data.operationId);
+            // If multiple segments, stitch them together
+            else if (videoUrls.length > 1) {
+                const stitchResponse = await fetch("/api/video/stitch", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        videoUrls,
+                        userId: user.id,
+                    }),
+                });
+
+                const stitchData = await stitchResponse.json();
+                if (stitchData.stitchedVideoUrl) {
+                    setVideoUrl(stitchData.stitchedVideoUrl);
+                }
             }
+
+            // Refresh credits
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('credits')
+                .eq('id', user.id)
+                .single();
+            setCredits(profile?.credits ?? 0);
+
         } catch (error: any) {
             console.error("UGC generation error:", error);
             setErrorMessage(error.message || "Failed to generate UGC video");
         } finally {
             setIsGenerating(false);
+            setGenerationProgress({ current: 0, total: 0 });
         }
     };
 
-    const pollForVideo = async (operationId: string) => {
+    const pollForVideo = async (operationId: string): Promise<string> => {
         const maxAttempts = 120;
         let attempts = 0;
 
@@ -192,14 +241,7 @@ export default function UGCPage() {
                 const data = await response.json();
 
                 if (data.status === "completed" && data.videoUrl) {
-                    setVideoUrl(data.videoUrl);
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('credits')
-                        .eq('id', user.id)
-                        .single();
-                    setCredits(profile?.credits ?? 0);
-                    return;
+                    return data.videoUrl;
                 } else if (data.status === "failed") {
                     throw new Error(data.error || "Video generation failed");
                 }
@@ -370,10 +412,23 @@ export default function UGCPage() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold mb-2">Duration</label>
-                                    <div className="p-2 border-2 border-gray-200 rounded-lg bg-gray-50 font-medium text-gray-600">
-                                        8 seconds (Veo3 fixed duration)
-                                    </div>
+                                    <label className="block text-sm font-bold mb-2">Video Duration</label>
+                                    <select
+                                        value={duration}
+                                        onChange={(e) => setDuration(Number(e.target.value))}
+                                        className="w-full p-2 border-2 border-gray-300 rounded-lg focus:border-black focus:ring-0 font-medium"
+                                    >
+                                        <option value={8}>8 seconds (1 segment)</option>
+                                        <option value={16}>16 seconds (2 segments)</option>
+                                        <option value={24}>24 seconds (3 segments)</option>
+                                        <option value={32}>32 seconds (4 segments)</option>
+                                        <option value={40}>40 seconds (5 segments)</option>
+                                        <option value={48}>48 seconds (6 segments)</option>
+                                        <option value={60}>60 seconds (8 segments)</option>
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Creates {getSegmentCount()} × 8-second videos and stitches them together
+                                    </p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold mb-2">Language</label>
@@ -442,12 +497,33 @@ export default function UGCPage() {
                             ) : isGenerating ? (
                                 <div className="text-center p-8">
                                     <div className="text-6xl animate-bounce mb-4">🎬</div>
-                                    <p className="font-bold text-xl text-white mb-2">
-                                        Creating your UGC video...
-                                    </p>
-                                    <p className="text-gray-400 text-sm">
-                                        This may take a few moments
-                                    </p>
+                                    {generationProgress.total > 1 ? (
+                                        <>
+                                            <p className="font-bold text-xl text-white mb-2">
+                                                Generating segment {generationProgress.current} of {generationProgress.total}
+                                            </p>
+                                            <div className="w-64 mx-auto mt-4">
+                                                <div className="bg-gray-700 rounded-full h-3 overflow-hidden">
+                                                    <div
+                                                        className="bg-gradient-to-r from-purple-500 to-pink-500 h-full transition-all duration-500"
+                                                        style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <p className="text-gray-400 text-xs mt-2">
+                                                {generationProgress.current === generationProgress.total ? 'Stitching videos together...' : 'Please wait...'}
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="font-bold text-xl text-white mb-2">
+                                                Creating your UGC video...
+                                            </p>
+                                            <p className="text-gray-400 text-sm">
+                                                This may take a few moments
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="text-center text-gray-500 p-8">
