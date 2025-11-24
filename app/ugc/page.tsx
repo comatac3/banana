@@ -371,15 +371,9 @@ export default function UGCPage() {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold mb-2">Duration</label>
-                                    <select
-                                        value={duration}
-                                        onChange={(e) => setDuration(Number(e.target.value))}
-                                        className="w-full p-2 border-2 border-gray-300 rounded-lg focus:border-black focus:ring-0 font-medium"
-                                    >
-                                        <option value={15}>15 seconds</option>
-                                        <option value={30}>30 seconds</option>
-                                        <option value={60}>60 seconds</option>
-                                    </select>
+                                    <div className="p-2 border-2 border-gray-200 rounded-lg bg-gray-50 font-medium text-gray-600">
+                                        8 seconds (Veo3 fixed duration)
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold mb-2">Language</label>
