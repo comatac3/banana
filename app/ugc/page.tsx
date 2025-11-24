@@ -12,28 +12,24 @@ const UGC_STYLES = [
         name: 'Casual Review',
         description: 'Natural product review like talking to a friend',
         icon: '💬',
-        cost: 15,
     },
     {
         id: 'unboxing',
         name: 'Unboxing',
         description: 'Excited first impression and product reveal',
         icon: '📦',
-        cost: 15,
     },
     {
         id: 'before_after',
         name: 'Before/After',
         description: 'Show transformation or results',
         icon: '✨',
-        cost: 18,
     },
     {
         id: 'tutorial',
         name: 'How-To Tutorial',
         description: 'Step-by-step product usage guide',
         icon: '👆',
-        cost: 18,
     },
 ];
 
@@ -51,6 +47,12 @@ export default function UGCPage() {
     const [selectedStyle, setSelectedStyle] = useState(UGC_STYLES[0]);
     const [duration, setDuration] = useState(15);
     const [language, setLanguage] = useState("th");
+    const [veoModel, setVeoModel] = useState("veo3");
+
+    // Calculate cost based on selected veo model
+    const getModelCost = () => {
+        return veoModel === "veo3_fast" ? 6 : 10;
+    };
 
     const [isGenerating, setIsGenerating] = useState(false);
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -100,7 +102,8 @@ export default function UGCPage() {
     };
 
     const handleGenerateUGC = async () => {
-        if (!user || !credits || credits < selectedStyle.cost) {
+        const modelCost = getModelCost();
+        if (!user || !credits || credits < modelCost) {
             alert("Insufficient credits!");
             return;
         }
@@ -143,7 +146,7 @@ export default function UGCPage() {
                 body: JSON.stringify({
                     sourceImage: productImage,
                     prompt: ugcPrompt,
-                    model: "veo3",
+                    model: veoModel,
                     aspectRatio: "9:16", // Vertical for mobile/social
                     duration: 8,
                 }),
@@ -185,7 +188,7 @@ export default function UGCPage() {
             await new Promise(resolve => setTimeout(resolve, 5000));
 
             try {
-                const response = await fetch(`/api/video/status?operationId=${encodeURIComponent(operationId)}&model=veo3`);
+                const response = await fetch(`/api/video/status?operationId=${encodeURIComponent(operationId)}&model=${veoModel}`);
                 const data = await response.json();
 
                 if (data.status === "completed" && data.videoUrl) {
@@ -330,14 +333,9 @@ export default function UGCPage() {
                                                 : 'bg-white border-gray-200 hover:border-black hover:bg-gray-50'
                                         }`}
                                     >
-                                        <div className="flex justify-between items-center mb-1">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-2xl">{style.icon}</span>
-                                                <span className="font-black">{style.name}</span>
-                                            </div>
-                                            <span className="text-xs font-bold bg-black text-white px-2 py-0.5 rounded-full">
-                                                {style.cost} 🍌
-                                            </span>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-2xl">{style.icon}</span>
+                                            <span className="font-black">{style.name}</span>
                                         </div>
                                         <p className="text-sm text-gray-600">{style.description}</p>
                                     </button>
@@ -360,6 +358,17 @@ export default function UGCPage() {
                         <div className="bg-white p-4 rounded-xl border-2 border-black shadow-hard">
                             <h2 className="font-black text-lg mb-4">Settings</h2>
                             <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold mb-2">Veo Model</label>
+                                    <select
+                                        value={veoModel}
+                                        onChange={(e) => setVeoModel(e.target.value)}
+                                        className="w-full p-2 border-2 border-gray-300 rounded-lg focus:border-black focus:ring-0 font-medium"
+                                    >
+                                        <option value="veo3_fast">Veo3 Fast (6 credits) - Faster generation</option>
+                                        <option value="veo3">Veo3 Quality (10 credits) - Higher quality 1080P</option>
+                                    </select>
+                                </div>
                                 <div>
                                     <label className="block text-sm font-bold mb-2">Duration</label>
                                     <select
@@ -391,7 +400,7 @@ export default function UGCPage() {
                     <div className="shrink-0 pt-4 bg-gray-50">
                         <button
                             onClick={handleGenerateUGC}
-                            disabled={isGenerating || !productImage || !script.trim() || (credits || 0) < selectedStyle.cost}
+                            disabled={isGenerating || !productImage || !script.trim() || (credits || 0) < getModelCost()}
                             className="w-full btn-pop bg-gradient-to-r from-purple-500 to-pink-500 text-white py-4 rounded-xl text-xl font-black shadow-hard hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                         >
                             {isGenerating ? (
@@ -403,7 +412,7 @@ export default function UGCPage() {
                             ) : !script.trim() ? (
                                 "Enter Script First"
                             ) : (
-                                `Generate UGC Video (${selectedStyle.cost} 🍌)`
+                                `Generate UGC Video (${getModelCost()} 🍌)`
                             )}
                         </button>
                     </div>
