@@ -238,6 +238,7 @@ export default function VideoPage() {
     const [quality, setQuality] = useState("standard");
     const [isGenerating, setIsGenerating] = useState(false);
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
+    const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [errorDetails, setErrorDetails] = useState<string | null>(null);
     const [showAssetPicker, setShowAssetPicker] = useState(false);
@@ -245,6 +246,12 @@ export default function VideoPage() {
     const [loadingAssets, setLoadingAssets] = useState(false);
     const [progressStep, setProgressStep] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Extend video state
+    const [showExtendModal, setShowExtendModal] = useState(false);
+    const [extendPrompt, setExtendPrompt] = useState("");
+    const [isExtending, setIsExtending] = useState(false);
+    const [extendError, setExtendError] = useState<string | null>(null);
 
     // Progress messages for video generation
     const progressMessages = [
@@ -446,6 +453,10 @@ export default function VideoPage() {
 
                 if (data.status === "completed" && data.videoUrl) {
                     setVideoUrl(data.videoUrl);
+                    // Store taskId for extend feature (veo3 models only)
+                    if (selectedModel.id.startsWith('veo3')) {
+                        setVideoTaskId(operationId);
+                    }
                     // Refresh credits
                     const { data: profile } = await supabase
                         .from('profiles')
@@ -467,6 +478,77 @@ export default function VideoPage() {
         }
 
         throw new Error("Video generation timed out. Please try again.");
+    };
+
+    // Check if video can be extended (veo3 models only)
+    const canExtendVideo = videoUrl && videoTaskId && selectedModel.id.startsWith('veo3');
+
+    // Handle extend video
+    const handleExtendVideo = async () => {
+        if (!videoTaskId || !extendPrompt.trim()) return;
+
+        setIsExtending(true);
+        setExtendError(null);
+
+        try {
+            // Call extend API
+            const response = await fetch('/api/video/extend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    taskId: videoTaskId,
+                    prompt: extendPrompt,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+
+            // Poll for extended video
+            await pollForExtendedVideo(data.operationId);
+
+            setShowExtendModal(false);
+            setExtendPrompt("");
+        } catch (error: any) {
+            setExtendError(error.message || 'Failed to extend video');
+        } finally {
+            setIsExtending(false);
+        }
+    };
+
+    const pollForExtendedVideo = async (operationId: string) => {
+        const maxAttempts = 120;
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            try {
+                const response = await fetch(`/api/video/status?operationId=${encodeURIComponent(operationId)}&model=veo3_extend`);
+                const data = await response.json();
+
+                if (data.status === "completed" && data.videoUrl) {
+                    setVideoUrl(data.videoUrl);
+                    setVideoTaskId(operationId); // Update taskId for chain extending
+                    // Refresh credits
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('credits')
+                        .eq('id', user.id)
+                        .single();
+                    setCredits(profile?.credits ?? 0);
+                    return;
+                } else if (data.status === "failed") {
+                    throw new Error(data.error || "Video extension failed");
+                }
+            } catch (error: any) {
+                throw error;
+            }
+
+            attempts++;
+        }
+
+        throw new Error("Video extension timed out.");
     };
 
     if (loading) return (
@@ -1013,8 +1095,16 @@ export default function VideoPage() {
                                 >
                                     Download Video 💾
                                 </a>
+                                {canExtendVideo && (
+                                    <button
+                                        onClick={() => setShowExtendModal(true)}
+                                        className="px-6 py-3 bg-purple-100 hover:bg-purple-200 text-purple-600 rounded-xl font-black border-2 border-purple-300 transition-all"
+                                    >
+                                        Extend 🎬
+                                    </button>
+                                )}
                                 <button
-                                    onClick={() => setVideoUrl(null)}
+                                    onClick={() => { setVideoUrl(null); setVideoTaskId(null); }}
                                     className="px-6 py-3 font-bold text-gray-500 hover:text-black"
                                 >
                                     Clear
@@ -1024,6 +1114,87 @@ export default function VideoPage() {
                     </div>
                 </div>
             </main>
+
+            {/* Extend Video Modal */}
+            {showExtendModal && (
+                <div
+                    className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"
+                    onClick={() => !isExtending && setShowExtendModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-2xl border-4 border-black max-w-xl w-full overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Modal Header */}
+                        <div className="p-4 border-b-2 border-black flex justify-between items-center bg-purple-50">
+                            <h3 className="font-black text-lg">🎬 Extend Video</h3>
+                            <button
+                                onClick={() => !isExtending && setShowExtendModal(false)}
+                                disabled={isExtending}
+                                className="text-2xl hover:scale-110 transition-transform disabled:opacity-50"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-4 space-y-4">
+                            <div className="bg-gray-100 rounded-lg p-3 text-sm">
+                                <p className="font-bold mb-1">How it works:</p>
+                                <ul className="text-gray-600 space-y-1 list-disc list-inside">
+                                    <li>Extends your video with new AI-generated content</li>
+                                    <li>Describe what should happen next in the video</li>
+                                    <li>Cost: 10 credits</li>
+                                </ul>
+                            </div>
+
+                            <div>
+                                <label className="block font-bold mb-2">Describe the extension:</label>
+                                <textarea
+                                    value={extendPrompt}
+                                    onChange={(e) => setExtendPrompt(e.target.value)}
+                                    placeholder="The camera continues to pan right, revealing a beautiful sunset over the ocean..."
+                                    className="w-full p-3 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none resize-none"
+                                    rows={4}
+                                    disabled={isExtending}
+                                />
+                            </div>
+
+                            {extendError && (
+                                <div className="bg-red-100 border-2 border-red-300 rounded-lg p-3 text-red-600 text-sm">
+                                    {extendError}
+                                </div>
+                            )}
+
+                            {isExtending && (
+                                <div className="bg-purple-100 border-2 border-purple-300 rounded-lg p-4 text-center">
+                                    <div className="text-3xl animate-bounce mb-2">🎬</div>
+                                    <p className="font-bold text-purple-700">Extending video...</p>
+                                    <p className="text-sm text-purple-600">This may take a few minutes</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="p-4 border-t-2 border-black flex gap-3">
+                            <button
+                                onClick={() => !isExtending && setShowExtendModal(false)}
+                                disabled={isExtending}
+                                className="flex-1 py-3 rounded-xl font-black border-2 border-gray-300 hover:bg-gray-100 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleExtendVideo}
+                                disabled={isExtending || !extendPrompt.trim() || (credits || 0) < 10}
+                                className="flex-1 btn-pop bg-purple-500 text-white py-3 rounded-xl font-black disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isExtending ? 'Extending...' : 'Extend Video (10 🍌)'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Asset Picker Modal */}
             {showAssetPicker && (

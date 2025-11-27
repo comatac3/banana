@@ -184,7 +184,7 @@ OUTPUT: A single high-quality image of the same person in the new pose.`;
     parts.push({ text: imagePrompt });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model: "gemini-3-pro-image-preview",
       contents: { parts },
     });
 

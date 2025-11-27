@@ -7,6 +7,7 @@ async function saveVideoAsset(
   userId: string,
   videoUrl: string,
   model: string,
+  taskId?: string,
   prompt?: string
 ) {
   try {
@@ -19,7 +20,12 @@ async function saveVideoAsset(
         thumbnail_url: null,
         prompt: prompt || '',
         model: model,
-        metadata: { source: 'kie.ai' }
+        metadata: {
+          source: 'kie.ai',
+          taskId: taskId || null,
+          // Veo3 videos can be extended (including extended videos for chain extending)
+          canExtend: model === 'veo3' || model === 'veo3_fast' || model === 'veo3_transition' || model === 'veo3_extend'
+        }
       });
 
     if (error) {
@@ -33,6 +39,7 @@ async function saveVideoAsset(
 const MODEL_COSTS: Record<string, number> = {
   veo3_fast: 6,
   veo3: 10,
+  veo3_extend: 10,
   veo3_transition: 12,
   runway: 8,
   kling: 8,
@@ -50,6 +57,7 @@ const MODEL_COSTS: Record<string, number> = {
 const STATUS_ENDPOINTS: Record<string, string> = {
   veo3: "https://api.kie.ai/api/v1/veo/record-info",
   veo3_fast: "https://api.kie.ai/api/v1/veo/record-info",
+  veo3_extend: "https://api.kie.ai/api/v1/veo/record-info",
   veo3_transition: "https://api.kie.ai/api/v1/veo/record-info",
   runway: "https://api.kie.ai/api/v1/runway/record-detail",
   kling: "https://api.kie.ai/api/v1/jobs/recordInfo",
@@ -170,17 +178,17 @@ export async function GET(request: NextRequest) {
 
     if (isCompleted && videoUrl) {
       await deductCredits(supabase, user.id, MODEL_COSTS[model] || 8);
-      // Save video to assets
-      saveVideoAsset(supabase, user.id, videoUrl, model);
-      return NextResponse.json({ status: "completed", videoUrl });
+      // Save video to assets with taskId for potential extension
+      saveVideoAsset(supabase, user.id, videoUrl, model, operationId);
+      return NextResponse.json({ status: "completed", videoUrl, taskId: operationId });
     }
 
     // Also check if video URL exists even without explicit success flag
     if (videoUrl && !successFlag) {
       await deductCredits(supabase, user.id, MODEL_COSTS[model] || 8);
-      // Save video to assets
-      saveVideoAsset(supabase, user.id, videoUrl, model);
-      return NextResponse.json({ status: "completed", videoUrl });
+      // Save video to assets with taskId for potential extension
+      saveVideoAsset(supabase, user.id, videoUrl, model, operationId);
+      return NextResponse.json({ status: "completed", videoUrl, taskId: operationId });
     }
 
     // Failed

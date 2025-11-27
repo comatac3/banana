@@ -19,7 +19,8 @@ async function saveImageAsset(
   userId: string,
   base64Data: string,
   prompt: string,
-  style?: string
+  style?: string,
+  model?: string
 ): Promise<string | null> {
   try {
     const base64 = cleanBase64(base64Data);
@@ -50,7 +51,7 @@ async function saveImageAsset(
         thumbnail_url: imageUrl,
         prompt: prompt,
         style: style,
-        model: 'gemini-2.5-flash-image',
+        model: model || 'gemini-3-pro-image-preview',
         metadata: { original_filename: fileName }
       });
 
@@ -65,9 +66,28 @@ async function saveImageAsset(
   }
 }
 
+// Helper to get aspect ratio description for prompts
+const getAspectRatioInfo = (ratio: string) => {
+  const ratioMap: Record<string, { description: string; orientation: string }> = {
+    '1:1': { description: 'square format (1:1 aspect ratio)', orientation: 'square' },
+    '16:9': { description: 'wide landscape format (16:9 aspect ratio)', orientation: 'landscape' },
+    '9:16': { description: 'vertical portrait format (9:16 aspect ratio)', orientation: 'portrait' },
+    '4:3': { description: 'standard landscape format (4:3 aspect ratio)', orientation: 'landscape' },
+    '3:4': { description: 'standard portrait format (3:4 aspect ratio)', orientation: 'portrait' },
+  };
+  return ratioMap[ratio] || ratioMap['1:1'];
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const { avatarImage, productImage, canvasImage, prompt, referenceImages } = await request.json();
+    const { avatarImage, productImage, canvasImage, prompt, referenceImages, model, aspectRatio } = await request.json();
+
+    // Use provided model or default to gemini-3-pro-image-preview
+    const selectedModel = model || 'gemini-3-pro-image-preview';
+
+    // Use provided aspect ratio or default to 1:1
+    const selectedRatio = aspectRatio || '1:1';
+    const ratioInfo = getAspectRatioInfo(selectedRatio);
 
     // Check authentication
     const supabase = await createClient();
@@ -176,12 +196,15 @@ ${productAnalysis ? `ANALYSIS:\n${productAnalysis}\n` : ""}
 
 STYLE/TASK: ${prompt}
 
+OUTPUT FORMAT: Generate the image in ${ratioInfo.description}. Frame and compose the shot appropriately for ${ratioInfo.orientation} orientation.
+
 GENERATE AN IMAGE THAT:
 1. Uses the EXACT person from Image 1 (same face, same appearance)
 2. Features the EXACT product from Image 2 (identical design, colors, logo)
 3. ${hasRefs ? 'Matches the style, composition, pose, and mood shown in the output reference images' : 'Shows the person naturally using/holding/wearing the product'}
 4. Looks like a real professional advertisement photo
 5. Has cohesive lighting and realistic integration
+6. Is properly framed for ${ratioInfo.description}
 
 ${hasRefs ? 'The output should look like the reference images, but starring the person from Image 1 with the product from Image 2.' : 'Output a single professional advertisement photo.'}`;
 
@@ -220,7 +243,7 @@ ${hasRefs ? 'The output should look like the reference images, but starring the 
         parts.push({ text: imagePrompt });
 
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash-image",
+          model: selectedModel,
           contents: { parts },
         });
 
@@ -246,7 +269,7 @@ ${hasRefs ? 'The output should look like the reference images, but starring the 
           .eq('id', user.id);
 
         // Save image to storage and assets table (async, don't wait)
-        saveImageAsset(supabase, user.id, generatedImageData, prompt, prompt.substring(0, 100));
+        saveImageAsset(supabase, user.id, generatedImageData, prompt, prompt.substring(0, 100), selectedModel);
 
         return NextResponse.json({
           generatedImage: generatedImageData,
@@ -270,16 +293,19 @@ ${hasRefs ? 'The output should look like the reference images, but starring the 
 
 Style to apply: ${prompt}
 
+Output Format: Generate the image in ${ratioInfo.description}. Frame and compose the shot appropriately for ${ratioInfo.orientation} orientation.
+
 Requirements:
 - Keep the product EXACTLY as it appears
 - Apply the requested style to lighting, background, and mood
-- Create a cohesive, professional advertisement look`;
+- Create a cohesive, professional advertisement look
+- Frame the composition properly for ${ratioInfo.description}`;
 
       console.log("Generating image with Gemini from canvas, prompt:", imagePrompt);
 
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash-image",
+          model: selectedModel,
           contents: {
             parts: [
               {
@@ -317,7 +343,7 @@ Requirements:
           .eq('id', user.id);
 
         // Save image to storage and assets table (async, don't wait)
-        saveImageAsset(supabase, user.id, generatedImageData, prompt, prompt.substring(0, 100));
+        saveImageAsset(supabase, user.id, generatedImageData, prompt, prompt.substring(0, 100), selectedModel);
 
         return NextResponse.json({
           generatedImage: generatedImageData,
@@ -334,7 +360,7 @@ Requirements:
     } else if (avatarImage && productImage) {
       // Use case 1: Compose avatar and product images - suggest placement
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
+        model: selectedModel,
         contents: {
           parts: [
             {

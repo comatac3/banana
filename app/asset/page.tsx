@@ -15,6 +15,11 @@ interface Asset {
   style: string | null;
   model: string | null;
   created_at: string;
+  metadata?: {
+    source?: string;
+    taskId?: string;
+    canExtend?: boolean;
+  };
 }
 
 export default function AssetPage() {
@@ -29,6 +34,17 @@ export default function AssetPage() {
   const [filter, setFilter] = useState<'all' | 'image' | 'video'>('all');
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Extend video state
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [extendPrompt, setExtendPrompt] = useState("");
+  const [isExtending, setIsExtending] = useState(false);
+  const [extendError, setExtendError] = useState<string | null>(null);
+
+  // Edit taskId state
+  const [showEditTaskId, setShowEditTaskId] = useState(false);
+  const [editTaskIdValue, setEditTaskIdValue] = useState("");
+  const [isSavingTaskId, setIsSavingTaskId] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -97,6 +113,135 @@ export default function AssetPage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     window.location.href = "/";
+  };
+
+  const handleSaveTaskId = async () => {
+    if (!selectedAsset || !editTaskIdValue.trim()) return;
+
+    setIsSavingTaskId(true);
+    try {
+      const response = await fetch('/api/assets/update-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assetId: selectedAsset.id,
+          taskId: editTaskIdValue.trim(),
+          canExtend: true,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      // Update local state
+      setAssets(assets.map(a =>
+        a.id === selectedAsset.id
+          ? { ...a, metadata: { ...a.metadata, taskId: editTaskIdValue.trim(), canExtend: true } }
+          : a
+      ));
+      setSelectedAsset({
+        ...selectedAsset,
+        metadata: { ...selectedAsset.metadata, taskId: editTaskIdValue.trim(), canExtend: true }
+      });
+      setShowEditTaskId(false);
+      setEditTaskIdValue("");
+    } catch (error: any) {
+      alert(error.message || 'Failed to save taskId');
+    } finally {
+      setIsSavingTaskId(false);
+    }
+  };
+
+  const canExtendVideo = (asset: Asset) => {
+    // Check if video can be extended:
+    // 1. Must be a video
+    // 2. Must have taskId in metadata
+    // 3. Either canExtend is true OR model is a veo3 variant (for backwards compatibility)
+    if (asset.type !== 'video' || !asset.metadata?.taskId) return false;
+
+    // If canExtend is explicitly set, use it
+    if (asset.metadata?.canExtend !== undefined) {
+      return asset.metadata.canExtend === true;
+    }
+
+    // Backwards compatibility: allow extending for veo3 model variants
+    const veo3Models = ['veo3', 'veo3_fast', 'veo3_transition', 'veo3_extend'];
+    return veo3Models.includes(asset.model || '');
+  };
+
+  const handleExtendVideo = async () => {
+    if (!selectedAsset || !selectedAsset.metadata?.taskId || !extendPrompt.trim()) return;
+
+    setIsExtending(true);
+    setExtendError(null);
+
+    try {
+      // Start the extend request
+      const response = await fetch('/api/video/extend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: selectedAsset.metadata.taskId,
+          prompt: extendPrompt.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to extend video');
+      }
+
+      // Poll for the extended video
+      if (data.operationId) {
+        await pollForExtendedVideo(data.operationId);
+      }
+    } catch (error: any) {
+      console.error('Error extending video:', error);
+      setExtendError(error.message || 'Failed to extend video');
+    } finally {
+      setIsExtending(false);
+    }
+  };
+
+  const pollForExtendedVideo = async (operationId: string) => {
+    const maxAttempts = 120; // 10 minutes max
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      try {
+        const response = await fetch(`/api/video/status?operationId=${encodeURIComponent(operationId)}&model=veo3_extend`);
+        const data = await response.json();
+
+        if (data.status === 'completed' && data.videoUrl) {
+          // Refresh assets to show the new extended video
+          await fetchAssets();
+          // Refresh credits
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('credits')
+            .eq('id', user.id)
+            .single();
+          setCredits(profile?.credits ?? 0);
+          // Close modals
+          setShowExtendModal(false);
+          setSelectedAsset(null);
+          setExtendPrompt('');
+          return;
+        } else if (data.status === 'failed') {
+          throw new Error(data.error || 'Video extension failed');
+        }
+      } catch (error: any) {
+        console.error('Polling error:', error);
+        throw error;
+      }
+
+      attempts++;
+    }
+
+    throw new Error('Video extension timed out. Please check your assets later.');
   };
 
   const filteredAssets = assets.filter(asset =>
@@ -205,21 +350,25 @@ export default function AssetPage() {
                 onClick={() => setSelectedAsset(asset)}
               >
                 {/* Thumbnail */}
-                <div className="aspect-square bg-gray-100 relative overflow-hidden">
+                <div className="aspect-square bg-gray-900 relative overflow-hidden">
                   {asset.type === 'image' ? (
                     <img
                       src={asset.thumbnail_url || asset.url}
                       alt="Asset"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-black">
                       <video
                         src={asset.url}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         muted
                         playsInline
-                        onMouseEnter={(e) => e.currentTarget.play()}
+                        loop
+                        onMouseEnter={(e) => {
+                          e.currentTarget.currentTime = 0;
+                          e.currentTarget.play().catch(() => {});
+                        }}
                         onMouseLeave={(e) => {
                           e.currentTarget.pause();
                           e.currentTarget.currentTime = 0;
@@ -306,24 +455,170 @@ export default function AssetPage() {
                   <p><span className="font-bold">Prompt:</span> {selectedAsset.prompt}</p>
                 )}
                 <p><span className="font-bold">Created:</span> {formatDate(selectedAsset.created_at)}</p>
+
+                {/* TaskId for videos */}
+                {selectedAsset.type === 'video' && (
+                  <div className="pt-2 border-t border-gray-200">
+                    {showEditTaskId ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={editTaskIdValue}
+                          onChange={(e) => setEditTaskIdValue(e.target.value)}
+                          placeholder="Enter Task ID"
+                          className="flex-1 px-3 py-1 border-2 border-gray-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none"
+                        />
+                        <button
+                          onClick={handleSaveTaskId}
+                          disabled={isSavingTaskId || !editTaskIdValue.trim()}
+                          className="px-3 py-1 bg-purple-500 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+                        >
+                          {isSavingTaskId ? '...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => { setShowEditTaskId(false); setEditTaskIdValue(""); }}
+                          className="px-3 py-1 bg-gray-200 rounded-lg text-sm font-bold"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">Task ID:</span>
+                        {selectedAsset.metadata?.taskId ? (
+                          <>
+                            <span className="text-gray-600 font-mono text-xs truncate max-w-[200px]">
+                              {selectedAsset.metadata.taskId}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setEditTaskIdValue(selectedAsset.metadata?.taskId || "");
+                                setShowEditTaskId(true);
+                              }}
+                              className="text-purple-500 hover:text-purple-700 text-xs"
+                            >
+                              ✏️ Edit
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setShowEditTaskId(true)}
+                            className="text-purple-500 hover:text-purple-700 text-xs font-bold"
+                          >
+                            + Add Task ID (for Extend)
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Actions */}
-            <div className="p-4 border-t-2 border-black flex gap-3">
+            <div className="p-4 border-t-2 border-black flex gap-3 flex-wrap">
               <a
                 href={selectedAsset.url}
                 download={`banana-${selectedAsset.type}-${selectedAsset.id}`}
-                className="flex-1 btn-pop bg-pop-green text-white py-3 rounded-xl font-black text-center"
+                className="flex-1 btn-pop bg-pop-green text-white py-3 rounded-xl font-black text-center min-w-[120px]"
               >
                 Download 💾
               </a>
+              {canExtendVideo(selectedAsset) && (
+                <button
+                  onClick={() => setShowExtendModal(true)}
+                  className="px-6 py-3 bg-purple-100 hover:bg-purple-200 text-purple-600 rounded-xl font-black border-2 border-purple-300 transition-all"
+                >
+                  Extend Video 🎬
+                </button>
+              )}
               <button
                 onClick={() => handleDelete(selectedAsset)}
                 disabled={deleting === selectedAsset.id}
                 className="px-6 py-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl font-black border-2 border-red-300 disabled:opacity-50"
               >
                 {deleting === selectedAsset.id ? '...' : '🗑️ Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extend Video Modal */}
+      {showExtendModal && selectedAsset && (
+        <div
+          className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"
+          onClick={() => !isExtending && setShowExtendModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl border-4 border-black max-w-xl w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-4 border-b-2 border-black flex justify-between items-center bg-purple-50">
+              <h3 className="font-black text-lg">🎬 Extend Video</h3>
+              <button
+                onClick={() => !isExtending && setShowExtendModal(false)}
+                disabled={isExtending}
+                className="text-2xl hover:scale-110 transition-transform disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-4">
+              <div className="bg-gray-100 rounded-lg p-3 text-sm">
+                <p className="font-bold mb-1">How it works:</p>
+                <ul className="text-gray-600 space-y-1 list-disc list-inside">
+                  <li>Extends your video with new AI-generated content</li>
+                  <li>Describe what should happen next in the video</li>
+                  <li>Cost: 10 credits</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block font-bold mb-2">Describe the extension:</label>
+                <textarea
+                  value={extendPrompt}
+                  onChange={(e) => setExtendPrompt(e.target.value)}
+                  placeholder="The camera continues to pan right, revealing a beautiful sunset over the ocean..."
+                  className="w-full p-3 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none resize-none"
+                  rows={4}
+                  disabled={isExtending}
+                />
+              </div>
+
+              {extendError && (
+                <div className="bg-red-100 border-2 border-red-300 rounded-lg p-3 text-red-600 text-sm">
+                  {extendError}
+                </div>
+              )}
+
+              {isExtending && (
+                <div className="bg-purple-100 border-2 border-purple-300 rounded-lg p-4 text-center">
+                  <div className="text-3xl animate-bounce mb-2">🎬</div>
+                  <p className="font-bold text-purple-700">Extending video...</p>
+                  <p className="text-sm text-purple-600">This may take a few minutes</p>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="p-4 border-t-2 border-black flex gap-3">
+              <button
+                onClick={() => !isExtending && setShowExtendModal(false)}
+                disabled={isExtending}
+                className="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-black border-2 border-gray-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExtendVideo}
+                disabled={isExtending || !extendPrompt.trim() || (credits ?? 0) < 10}
+                className="flex-1 btn-pop bg-purple-500 hover:bg-purple-600 text-white py-3 rounded-xl font-black disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isExtending ? 'Extending...' : 'Extend (10 🍌)'}
               </button>
             </div>
           </div>
